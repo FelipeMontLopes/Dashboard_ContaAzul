@@ -10,6 +10,7 @@ def selecionar_pagina() -> str:
             "Contas a Receber",
             "Contas a Pagar",
             "Fluxo de Caixa",
+            "Explorador da API",
             "Configurações",
         ],
     )

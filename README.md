@@ -168,6 +168,14 @@ As URLs de auth/token/API/scope/diagnóstico podem ser omitidas nos secrets se v
 - A pasta **`.local_data/`** não deve ir para o repositório; no Streamlit Cloud o filesystem é **efêmero**: **SQLite local não é persistência confiável** — reinícios ou novos containers podem apagar tokens gravados localmente. Para produção séria, planeje migrar tokens/sessão para um banco gerenciado (ex.: Postgres/Supabase).
 - Para testes locais após mudanças: `pip install -r requirements.txt` e `streamlit run app.py`.
 
+## Fase 5 — Explorador da API e snapshots
+
+Esta fase adiciona o **Explorador da API** (menu lateral) para chamar endpoints GET reais com o cliente autenticado, registrar **sucesso ou erro** e gravar **snapshots sanitizados** das respostas em SQLite.
+
+- Serve para **descobrir quais endpoints respondem** e **qual formato de dados** retornam antes de normalizar dados para o dashboard.
+- Os snapshots ficam em **`.local_data/`** (arquivo `conta_azul_api_snapshots.db`). Essa pasta **não** vai para o Git.
+- No **Streamlit Community Cloud**, o filesystem é efêmero: **SQLite local pode não persistir** entre reinícios ou novos containers — use o explorador como diagnóstico; para produção estável, planeje migrar snapshots e tokens para **Postgres/Supabase** (ou outro backend gerenciado).
+
 ## Fase 4 — Primeira chamada real de diagnóstico
 
 Esta fase valida a conexão real autenticada sem sincronizar dados financeiros.
