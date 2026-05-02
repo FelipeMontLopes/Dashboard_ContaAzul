@@ -64,6 +64,20 @@ def test_empty_contract_returns_empty_buckets() -> None:
     assert all(len(v) == 0 for v in s.values())
 
 
+def test_suggests_centro_custo_as_categoria() -> None:
+    c = {
+        "candidate_id_fields": [],
+        "candidate_date_fields": [],
+        "candidate_money_fields": [],
+        "candidate_status_fields": [],
+        "candidate_name_description_fields": [],
+        "top_level_keys": ["centro_custo_nome"],
+        "aggregated_item_keys": [],
+    }
+    s = suggest_financial_fields(c)
+    assert any(x["field"] == "centro_custo_nome" for x in s["categoria"])
+
+
 def test_low_confidence_when_only_unknown_keys() -> None:
     c = {
         "candidate_id_fields": [],

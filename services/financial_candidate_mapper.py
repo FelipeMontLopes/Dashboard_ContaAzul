@@ -79,8 +79,19 @@ def suggest_financial_fields(contract: dict[str, Any]) -> dict[str, list[dict[st
             )
         if any(x in nk for x in ("tipo", "type", "natureza", "direction")):
             _add(out, "tipo_movimento", str(k), "media", "palavra-chave de tipo/natureza")
-        if any(x in nk for x in ("categoria", "category", "classificacao", "classificação", "plano")):
-            _add(out, "categoria", str(k), "media", "palavra-chave de categoria")
+        if any(
+            x in nk
+            for x in (
+                "categoria",
+                "category",
+                "classificacao",
+                "classificação",
+                "plano",
+                "centro_custo",
+                "centrocusto",
+            )
+        ):
+            _add(out, "categoria", str(k), "media", "palavra-chave de categoria / centro de custo")
 
     # Baixa confiança: chaves remanescentes que parecem id numérico
     for k in keys:

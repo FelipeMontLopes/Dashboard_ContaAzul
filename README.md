@@ -183,7 +183,7 @@ Esta fase adiciona o **Explorador da API** (menu lateral) para chamar endpoints 
 Esta fase **não substitui os mocks** das telas do dashboard e **não define KPIs finais**.
 
 - Usa os **snapshots brutos** já salvos pelo Explorador (JSON sanitizado no SQLite).
-- A página **Contratos de Dados** infere um **contrato exploratório** (`infer_json_contract`): tipos, chaves, candidatos a data/valor/status/id/texto e exemplos seguros.
+- A página **Contratos de Dados** infere um **contrato exploratório** (`infer_json_contract`): tipos, chaves, candidatos a data/valor/status/id/texto, **candidatos de paginação** (chaves como `pagina`, `total`, `tamanho_pagina`, etc.) e exemplos seguros. Cada análise referencia o **`snapshot_id`** usado.
 - **`suggest_financial_fields`** propõe mapeamentos financeiros **candidatos** (confiança alta/média/baixa), sem aplicar normalização ao fluxo de negócio ainda.
 - Objetivo: preparar a **Fase 6** (normalização) com base no JSON **real** da sua conta e permissões.
 - Snapshots continuam em **`.local_data/`** (não versionados); no Streamlit Cloud o SQLite local **não é persistência confiável**.

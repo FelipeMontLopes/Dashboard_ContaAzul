@@ -42,8 +42,27 @@ _MONEY_KEY_FRAGMENTS = (
     "multa",
     "desconto",
 )
-_STATUS_KEY_FRAGMENTS = ("status", "situacao", "situação", "state", "situacao")
+_STATUS_KEY_FRAGMENTS = ("status", "situacao", "situação", "state")
 _ID_KEY_FRAGMENTS = ("id", "uuid", "codigo", "código", "identificador")
+_PAGINATION_FRAGMENTS = (
+    "pagina",
+    "page",
+    "tamanho",
+    "size",
+    "limit",
+    "offset",
+    "total",
+    "quantidade",
+    "elementos",
+    "registros",
+    "pages",
+    "proximo",
+    "próximo",
+    "has_next",
+    "paginacao",
+    "paginação",
+)
+
 _NAME_KEY_FRAGMENTS = (
     "nome",
     "descricao",
@@ -155,6 +174,22 @@ def _aggregate_list_of_dicts(items: list[dict[str, Any]]) -> tuple[list[str], di
     return all_keys, merged_types, agg_cls
 
 
+def _pagination_candidate_keys(key_list: list[str]) -> list[str]:
+    """Heurística para chaves que podem indicar paginação ou totais."""
+    out: list[str] = []
+    for k in key_list:
+        nk = _norm_key(k)
+        if any(f in nk for f in _PAGINATION_FRAGMENTS):
+            out.append(str(k))
+    return list(dict.fromkeys(out))
+
+
+def _with_pagination(contract: dict[str, Any]) -> dict[str, Any]:
+    keys = (contract.get("top_level_keys") or []) + (contract.get("aggregated_item_keys") or [])
+    contract["pagination_candidates"] = _pagination_candidate_keys(keys)
+    return contract
+
+
 def _nested_simple_summary(obj: dict[str, Any], max_keys: int = 40) -> dict[str, Any]:
     out: dict[str, Any] = {}
     for i, (k, v) in enumerate(obj.items()):
@@ -175,7 +210,7 @@ def infer_json_contract(data: Any) -> dict[str, Any]:
     Analisa estrutura JSON e devolve metadados exploratórios (sem regra de negócio final).
     """
     if data is None:
-        return {
+        return _with_pagination({
             "root_type": "null",
             "total_items": None,
             "top_level_keys": [],
@@ -188,10 +223,10 @@ def infer_json_contract(data: Any) -> dict[str, Any]:
             "aggregated_item_keys": [],
             "nested_hints": {},
             "safe_examples": [],
-        }
+        })
 
     if isinstance(data, str):
-        return {
+        return _with_pagination({
             "root_type": "string",
             "total_items": None,
             "top_level_keys": [],
@@ -204,12 +239,12 @@ def infer_json_contract(data: Any) -> dict[str, Any]:
             "aggregated_item_keys": [],
             "nested_hints": {},
             "safe_examples": [sanitize_api_response(data)],
-        }
+        })
 
     if isinstance(data, list):
         total = len(data)
         if total == 0:
-            return {
+            return _with_pagination({
                 "root_type": "list",
                 "total_items": 0,
                 "top_level_keys": [],
@@ -222,7 +257,7 @@ def infer_json_contract(data: Any) -> dict[str, Any]:
                 "aggregated_item_keys": [],
                 "nested_hints": {},
                 "safe_examples": [],
-            }
+            })
         first = data[0]
         if isinstance(first, dict):
             agg_keys, merged_types, agg_cls = _aggregate_list_of_dicts(
@@ -230,7 +265,7 @@ def infer_json_contract(data: Any) -> dict[str, Any]:
             )
             examples_raw = data[:_MAX_SAFE_EXAMPLES]
             safe = [sanitize_api_response(x) for x in examples_raw]
-            return {
+            return _with_pagination({
                 "root_type": "list",
                 "total_items": total,
                 "top_level_keys": agg_keys,
@@ -243,8 +278,8 @@ def infer_json_contract(data: Any) -> dict[str, Any]:
                 "aggregated_item_keys": agg_keys,
                 "nested_hints": {},
                 "safe_examples": safe,
-            }
-        return {
+            })
+        return _with_pagination({
             "root_type": "list",
             "total_items": total,
             "top_level_keys": [],
@@ -257,7 +292,7 @@ def infer_json_contract(data: Any) -> dict[str, Any]:
             "aggregated_item_keys": [],
             "nested_hints": {},
             "safe_examples": [sanitize_api_response(first)],
-        }
+        })
 
     if isinstance(data, dict):
         key_types, cls_map = _infer_keys_from_dict_sample(data)
@@ -265,7 +300,7 @@ def infer_json_contract(data: Any) -> dict[str, Any]:
         nested = _nested_simple_summary(data)
         examples_raw = [data] if data else []
         safe = [sanitize_api_response(x) for x in examples_raw[:_MAX_SAFE_EXAMPLES]]
-        return {
+        return _with_pagination({
             "root_type": "dict",
             "total_items": None,
             "top_level_keys": top_keys,
@@ -278,9 +313,9 @@ def infer_json_contract(data: Any) -> dict[str, Any]:
             "aggregated_item_keys": [],
             "nested_hints": nested,
             "safe_examples": safe,
-        }
+        })
 
-    return {
+    return _with_pagination({
         "root_type": type(data).__name__,
         "total_items": None,
         "top_level_keys": [],
@@ -293,17 +328,24 @@ def infer_json_contract(data: Any) -> dict[str, Any]:
         "aggregated_item_keys": [],
         "nested_hints": {},
         "safe_examples": [sanitize_api_response(data)],
-    }
+    })
 
 
 def infer_contract_from_snapshot(snapshot_id: int, db_path: str | None = None) -> dict[str, Any]:
     row = get_snapshot_by_id(snapshot_id, db_path=db_path)
     if not row:
-        return {"error": "snapshot não encontrado", "resource_name": None, "contract": None}
+        return {
+            "error": "snapshot não encontrado",
+            "snapshot_id": None,
+            "resource_name": None,
+            "contract": None,
+        }
+    sid = int(row["id"])
     raw = row.get("response_json")
     if not raw:
         return {
             "error": "snapshot sem response_json",
+            "snapshot_id": sid,
             "resource_name": row.get("resource_name"),
             "path": row.get("path"),
             "fetched_at": row.get("fetched_at"),
@@ -314,11 +356,15 @@ def infer_contract_from_snapshot(snapshot_id: int, db_path: str | None = None) -
     except json.JSONDecodeError:
         return {
             "error": "response_json inválido",
+            "snapshot_id": sid,
             "resource_name": row.get("resource_name"),
+            "path": row.get("path"),
+            "fetched_at": row.get("fetched_at"),
             "contract": None,
         }
     contract = infer_json_contract(data)
     return {
+        "snapshot_id": sid,
         "resource_name": row["resource_name"],
         "path": row["path"],
         "fetched_at": row["fetched_at"],

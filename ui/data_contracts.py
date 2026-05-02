@@ -46,6 +46,8 @@ def render_data_contracts() -> None:
         return
 
     if result.get("error"):
+        if result.get("snapshot_id") is not None:
+            st.caption(f"snapshot_id: `{result.get('snapshot_id')}`")
         st.error(result["error"])
         return
 
@@ -55,6 +57,8 @@ def render_data_contracts() -> None:
         return
 
     st.subheader("Metadados do snapshot")
+    if result.get("snapshot_id") is not None:
+        st.write(f"- **snapshot_id:** `{result.get('snapshot_id')}`")
     st.write(f"- **resource_name:** `{result.get('resource_name')}`")
     st.write(f"- **path:** `{result.get('path')}`")
     st.write(f"- **fetched_at:** `{result.get('fetched_at')}`")
@@ -62,6 +66,11 @@ def render_data_contracts() -> None:
     st.subheader("Contrato inferido")
     st.write(f"- **root_type:** `{c.get('root_type')}`")
     st.write(f"- **total_items:** {c.get('total_items')}")
+    pag = c.get("pagination_candidates") or []
+    st.write(
+        "**Tem paginação (candidatos de chave):** "
+        + (", ".join(pag) if pag else "— nenhuma chave óbvia —")
+    )
     st.write("**Chaves principais (top_level / agregadas):**")
     keys = c.get("top_level_keys") or []
     st.code(", ".join(keys) if keys else "(nenhuma)", language=None)

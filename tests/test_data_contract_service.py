@@ -73,5 +73,13 @@ def test_infer_contract_from_snapshot_monkeypatch(monkeypatch: pytest.MonkeyPatc
     monkeypatch.setattr(dcs, "get_snapshot_by_id", _fake_get_snapshot_by_id)
     out = dcs.infer_contract_from_snapshot(42)
     assert out.get("error") is None
+    assert out["snapshot_id"] == 42
     assert out["resource_name"] == "test_res"
     assert out["contract"]["root_type"] == "dict"
+    assert "pagination_candidates" in out["contract"]
+
+
+def test_infer_json_contract_pagination_candidates() -> None:
+    c = dcs.infer_json_contract({"pagina": 1, "itens": [], "total_registros": 10})
+    assert "pagina" in (c.get("pagination_candidates") or [])
+    assert "total_registros" in (c.get("pagination_candidates") or [])
