@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import date, timedelta
 from typing import Any
 
 from auth_client_factory import AuthClientError, get_authenticated_client
@@ -9,32 +10,70 @@ from conta_azul_client import ContaAzulAPIError
 from services.api_snapshot_store import save_api_snapshot
 from services.diagnostico_api_service import sanitize_api_response
 
-DEFAULT_ENDPOINTS: list[dict[str, Any]] = [
-    {
-        "resource_name": "conta_conectada",
-        "method": "GET",
-        "path": "/v1/pessoas/conta-conectada",
-        "params": {},
-    },
-    {
-        "resource_name": "pessoas",
-        "method": "GET",
-        "path": "/v1/pessoas",
-        "params": {},
-    },
-    {
-        "resource_name": "financeiro_saldo_inicial",
-        "method": "GET",
-        "path": "/v1/financeiro/eventos-financeiros/saldo-inicial",
-        "params": {},
-    },
-    {
-        "resource_name": "financeiro_alteracoes",
-        "method": "GET",
-        "path": "/v1/financeiro/eventos-financeiros/alteracoes",
-        "params": {},
-    },
-]
+
+def get_default_financial_period_params(
+    days_back: int = 90,
+    days_forward: int = 30,
+    *,
+    pagina: int = 1,
+    tamanho_pagina: int = 100,
+) -> dict[str, Any]:
+    """
+    Parâmetros de período para endpoints financeiros (eventos-financeiros).
+
+    data_inicio / data_fim em formato ISO local sem timezone, como esperado pela API.
+    """
+    today = date.today()
+    start_d = today - timedelta(days=int(days_back))
+    end_d = today + timedelta(days=int(days_forward))
+    data_inicio = f"{start_d.isoformat()}T00:00:00"
+    data_fim = f"{end_d.isoformat()}T23:59:59"
+    return {
+        "pagina": int(pagina),
+        "tamanho_pagina": int(tamanho_pagina),
+        "data_inicio": data_inicio,
+        "data_fim": data_fim,
+    }
+
+
+def get_default_endpoints(
+    days_back: int = 90,
+    days_forward: int = 30,
+    tamanho_pagina: int = 100,
+) -> list[dict[str, Any]]:
+    """Lista de endpoints padrão com parâmetros calculados no momento da chamada."""
+    fin = get_default_financial_period_params(
+        days_back=days_back,
+        days_forward=days_forward,
+        pagina=1,
+        tamanho_pagina=tamanho_pagina,
+    )
+    return [
+        {
+            "resource_name": "conta_conectada",
+            "method": "GET",
+            "path": "/v1/pessoas/conta-conectada",
+            "params": {},
+        },
+        {
+            "resource_name": "pessoas",
+            "method": "GET",
+            "path": "/v1/pessoas",
+            "params": {"pagina": 1, "tamanho_pagina": int(tamanho_pagina)},
+        },
+        {
+            "resource_name": "financeiro_saldo_inicial",
+            "method": "GET",
+            "path": "/v1/financeiro/eventos-financeiros/saldo-inicial",
+            "params": dict(fin),
+        },
+        {
+            "resource_name": "financeiro_alteracoes",
+            "method": "GET",
+            "path": "/v1/financeiro/eventos-financeiros/alteracoes",
+            "params": dict(fin),
+        },
+    ]
 
 
 def summarize_response_shape(data: Any) -> dict[str, Any]:
@@ -216,10 +255,17 @@ def call_api_endpoint(
 
 def test_default_endpoints(
     db_path: str | None = None,
+    days_back: int = 90,
+    days_forward: int = 30,
+    tamanho_pagina: int = 100,
 ) -> list[dict[str, Any]]:
     """Chama todos os endpoints padrão e retorna lista de resultados."""
     out: list[dict[str, Any]] = []
-    for ep in DEFAULT_ENDPOINTS:
+    for ep in get_default_endpoints(
+        days_back=days_back,
+        days_forward=days_forward,
+        tamanho_pagina=tamanho_pagina,
+    ):
         r = call_api_endpoint(
             ep["resource_name"],
             ep["method"],
@@ -230,3 +276,12 @@ def test_default_endpoints(
         )
         out.append(r)
     return out
+
+
+def needs_financial_period_params(path: str) -> bool:
+    """True se o path for dos endpoints financeiros que exigem data_inicio/data_fim."""
+    p = (path or "").strip()
+    return (
+        "/financeiro/eventos-financeiros/saldo-inicial" in p
+        or "/financeiro/eventos-financeiros/alteracoes" in p
+    )

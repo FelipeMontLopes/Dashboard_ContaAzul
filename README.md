@@ -172,6 +172,8 @@ As URLs de auth/token/API/scope/diagnóstico podem ser omitidas nos secrets se v
 
 Esta fase adiciona o **Explorador da API** (menu lateral) para chamar endpoints GET reais com o cliente autenticado, registrar **sucesso ou erro** e gravar **snapshots sanitizados** das respostas em SQLite.
 
+- Os endpoints **`/v1/financeiro/eventos-financeiros/saldo-inicial`** e **`/v1/financeiro/eventos-financeiros/alteracoes`** exigem **`data_inicio`** e **`data_fim`** (e aceitam paginação). Sem esses query params, a Conta Azul costuma responder **400** (“Requisição inválida”). O explorador envia um período padrão configurável na própria página.
+
 - Serve para **descobrir quais endpoints respondem** e **qual formato de dados** retornam antes de normalizar dados para o dashboard.
 - Os snapshots ficam em **`.local_data/`** (arquivo `conta_azul_api_snapshots.db`). Essa pasta **não** vai para o Git.
 - No **Streamlit Community Cloud**, o filesystem é efêmero: **SQLite local pode não persistir** entre reinícios ou novos containers — use o explorador como diagnóstico; para produção estável, planeje migrar snapshots e tokens para **Postgres/Supabase** (ou outro backend gerenciado).

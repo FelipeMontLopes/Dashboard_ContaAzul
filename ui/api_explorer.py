@@ -9,6 +9,8 @@ import streamlit as st
 
 from services.api_explorer_service import (
     call_api_endpoint,
+    get_default_financial_period_params,
+    needs_financial_period_params,
     summarize_response_shape,
     test_default_endpoints,
 )
@@ -19,6 +21,17 @@ from services.api_snapshot_store import (
 )
 
 
+def _params_json_is_empty_dict(raw: str) -> bool:
+    t = (raw or "").strip()
+    if not t:
+        return True
+    try:
+        d = json.loads(t)
+        return isinstance(d, dict) and len(d) == 0
+    except json.JSONDecodeError:
+        return False
+
+
 def render_api_explorer() -> None:
     init_snapshot_db()
     st.title("Explorador da API Conta Azul")
@@ -27,9 +40,58 @@ def render_api_explorer() -> None:
         "Os resultados são snapshots brutos (sanitizados); não há normalização para telas finais."
     )
 
+    st.subheader("Parâmetros financeiros padrão")
+    st.caption(
+        "Os endpoints **saldo-inicial** e **alteracoes** exigem `data_inicio`, `data_fim` "
+        "e aceitam paginação. Ajuste o período abaixo antes de **Testar endpoints padrão**."
+    )
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        days_back = st.number_input(
+            "Dias para trás (data_inicio)",
+            min_value=1,
+            max_value=3650,
+            value=90,
+            step=1,
+            key="ae_days_back",
+        )
+    with c2:
+        days_forward = st.number_input(
+            "Dias para frente (data_fim)",
+            min_value=0,
+            max_value=3650,
+            value=30,
+            step=1,
+            key="ae_days_forward",
+        )
+    with c3:
+        tamanho_padrao = st.number_input(
+            "tamanho_pagina (padrão)",
+            min_value=1,
+            max_value=500,
+            value=100,
+            step=1,
+            key="ae_tamanho_padrao",
+        )
+
+    fin_preview = get_default_financial_period_params(
+        days_back=int(days_back),
+        days_forward=int(days_forward),
+        tamanho_pagina=int(tamanho_padrao),
+    )
+    st.write("**Período efetivo nos testes de financeiro:**")
+    st.code(
+        f"data_inicio = {fin_preview['data_inicio']}\ndata_fim = {fin_preview['data_fim']}",
+        language=None,
+    )
+
     if st.button("Testar endpoints padrão", type="primary"):
         with st.spinner("Chamando endpoints…"):
-            results = test_default_endpoints()
+            results = test_default_endpoints(
+                days_back=int(days_back),
+                days_forward=int(days_forward),
+                tamanho_pagina=int(tamanho_padrao),
+            )
         st.session_state["api_explorer_last_batch"] = results
 
     batch = st.session_state.get("api_explorer_last_batch")
@@ -52,6 +114,8 @@ def render_api_explorer() -> None:
         for i, r in enumerate(batch):
             title = f"{r['resource_name']} ({'ok' if r['success'] else 'erro'})"
             with st.expander(title, expanded=False):
+                st.caption("params enviados")
+                st.json(r.get("params") or {})
                 st.json(r.get("response_shape") or {})
                 if r["success"] and r.get("data") is not None:
                     st.markdown("**JSON sanitizado**")
@@ -72,6 +136,20 @@ def render_api_explorer() -> None:
             height=100,
             key="ae_params",
         )
+
+    mp = manual_path.strip()
+    if mp and needs_financial_period_params(mp) and _params_json_is_empty_dict(params_raw):
+        st.warning(
+            "Este endpoint exige **data_inicio** e **data_fim** (e normalmente paginação). "
+            "Sem esses parâmetros a Conta Azul costuma responder **400**."
+        )
+        ex = get_default_financial_period_params(
+            days_back=90,
+            days_forward=30,
+            tamanho_pagina=100,
+        )
+        with st.expander("Exemplo de params_json", expanded=False):
+            st.json(ex)
 
     if st.button("Executar GET", key="ae_run_manual"):
         err: str | None = None
@@ -113,6 +191,7 @@ def render_api_explorer() -> None:
                 "status_code": man.get("status_code"),
                 "response_shape": man.get("response_shape"),
                 "error_message": man.get("error_message"),
+                "params": man.get("params"),
             }
         )
         if man.get("success") and man.get("data") is not None:
@@ -141,7 +220,7 @@ def render_api_explorer() -> None:
             f"{'ok' if s['success'] else 'erro'} · {s['fetched_at']}"
             for s in shown
         ]
-        label_to_id = {opt_labels[i]: shown[i]["id"] for i in range(len(shown))}
+        label_to_id = {opt_labels[i]: shown[i]["id"] for i in range(len(opt_labels))}
         choice = st.selectbox("Selecionar snapshot", options=opt_labels, key="ae_pick_snap")
         tbl = [
             {

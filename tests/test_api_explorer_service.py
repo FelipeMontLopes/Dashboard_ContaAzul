@@ -101,3 +101,49 @@ def test_params_none_becomes_empty_dict(monkeypatch: pytest.MonkeyPatch, tmp_pat
     monkeypatch.setattr(ex, "get_authenticated_client", lambda: _Cap())
     ex.call_api_endpoint("r", "GET", "/v1/a", None, db_path=db)
     assert calls == [{}]
+
+
+def test_get_default_financial_period_params_structure() -> None:
+    p = ex.get_default_financial_period_params()
+    assert p["pagina"] == 1
+    assert p["tamanho_pagina"] == 100
+    assert "data_inicio" in p and "data_fim" in p
+    assert "T00:00:00" in p["data_inicio"]
+    assert "T23:59:59" in p["data_fim"]
+
+
+def test_get_default_endpoints_financial_have_dates() -> None:
+    eps = ex.get_default_endpoints()
+    by_name = {e["resource_name"]: e for e in eps}
+    assert "data_inicio" in by_name["financeiro_saldo_inicial"]["params"]
+    assert "data_fim" in by_name["financeiro_saldo_inicial"]["params"]
+    assert "data_inicio" in by_name["financeiro_alteracoes"]["params"]
+    assert by_name["pessoas"]["params"]["pagina"] == 1
+
+
+def test_call_forwards_params_to_client(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    db = str(tmp_path / "s.db")
+    calls: list[tuple[str, dict | None]] = []
+
+    class _Cap:
+        def get(self, path: str, params: dict | None = None) -> dict:
+            calls.append((path, params))
+            return {}
+
+    monkeypatch.setattr(ex, "get_authenticated_client", lambda: _Cap())
+    params = {"data_inicio": "2026-01-01T00:00:00", "data_fim": "2026-03-12T23:59:59"}
+    ex.call_api_endpoint(
+        "fin",
+        "GET",
+        "/v1/financeiro/eventos-financeiros/saldo-inicial",
+        params,
+        db_path=db,
+    )
+    assert len(calls) == 1
+    assert calls[0][1] == params
+
+
+def test_needs_financial_period_params() -> None:
+    assert ex.needs_financial_period_params("/v1/financeiro/eventos-financeiros/saldo-inicial")
+    assert ex.needs_financial_period_params("/x/financeiro/eventos-financeiros/alteracoes")
+    assert not ex.needs_financial_period_params("/v1/pessoas")
