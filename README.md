@@ -176,6 +176,16 @@ Esta fase adiciona o **Explorador da API** (menu lateral) para chamar endpoints 
 - Os snapshots ficam em **`.local_data/`** (arquivo `conta_azul_api_snapshots.db`). Essa pasta **não** vai para o Git.
 - No **Streamlit Community Cloud**, o filesystem é efêmero: **SQLite local pode não persistir** entre reinícios ou novos containers — use o explorador como diagnóstico; para produção estável, planeje migrar snapshots e tokens para **Postgres/Supabase** (ou outro backend gerenciado).
 
+## Fase 6A — Contratos dos dados reais
+
+Esta fase **não substitui os mocks** das telas do dashboard e **não define KPIs finais**.
+
+- Usa os **snapshots brutos** já salvos pelo Explorador (JSON sanitizado no SQLite).
+- A página **Contratos de Dados** infere um **contrato exploratório** (`infer_json_contract`): tipos, chaves, candidatos a data/valor/status/id/texto e exemplos seguros.
+- **`suggest_financial_fields`** propõe mapeamentos financeiros **candidatos** (confiança alta/média/baixa), sem aplicar normalização ao fluxo de negócio ainda.
+- Objetivo: preparar a **Fase 6** (normalização) com base no JSON **real** da sua conta e permissões.
+- Snapshots continuam em **`.local_data/`** (não versionados); no Streamlit Cloud o SQLite local **não é persistência confiável**.
+
 ## Fase 4 — Primeira chamada real de diagnóstico
 
 Esta fase valida a conexão real autenticada sem sincronizar dados financeiros.

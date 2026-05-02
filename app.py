@@ -8,6 +8,7 @@ from ui.contas_pagar import render_contas_pagar
 from ui.fluxo_caixa import render_fluxo_caixa
 from ui.configuracoes import render_configuracoes
 from ui.api_explorer import render_api_explorer
+from ui.data_contracts import render_data_contracts
 
 
 def main() -> None:
@@ -38,6 +39,8 @@ def main() -> None:
         render_fluxo_caixa()
     elif pagina == "Explorador da API":
         render_api_explorer()
+    elif pagina == "Contratos de Dados":
+        render_data_contracts()
     else:
         render_configuracoes()
 
