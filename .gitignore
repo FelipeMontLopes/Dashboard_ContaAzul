@@ -1,0 +1,11 @@
+.env
+.env.local
+.streamlit/secrets.toml
+.local_data/
+*.db
+conta_azul_tokens.db
+conta_azul_oauth_state.db
+conta_azul_app_settings.db
+__pycache__/
+.venv/
+token_store.json

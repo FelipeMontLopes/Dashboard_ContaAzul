@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "conta-azul-dashboard",
+      "runtimeExecutable": "C:\\Users\\Felipe Lopes\\Documents\\FM Soluções Tecnológicas\\Clientes\\Divinor\\conta_azul_dashboard\\.venv\\Scripts\\streamlit",
+      "runtimeArgs": ["run", "app.py", "--server.headless", "true", "--server.port", "8501"],
+      "port": 8501
+    }
+  ]
+}
