@@ -9,6 +9,7 @@ from app_settings_store import init_settings_db
 from auth_client_factory import AuthClientError, get_authenticated_client
 from config import get_settings
 from oauth_readiness import get_oauth_readiness
+from services.oauth_identity_service import mask_client_id
 from oauth_service import build_authorization_url, generate_state
 from oauth_state_store import clear_state, init_oauth_state_db, save_state
 from redirect_uri_service import (
@@ -63,12 +64,14 @@ def render_configuracoes() -> None:
 
     effective_redirect = get_effective_redirect_uri()
     vr_redirect = validate_redirect_uri_format(effective_redirect)
-    oauth_readiness = get_oauth_readiness(settings, effective_redirect, vr_redirect)
-    oauth_ready = oauth_readiness["ready"]
-
     token_db_abs = str(Path(get_token_db_path()).resolve())
     oauth_state_db_abs = str(Path(get_oauth_state_db_path()).resolve())
     conn = get_connection_status()
+    oauth_readiness = get_oauth_readiness(
+        settings, effective_redirect, vr_redirect, db_path=token_db_abs
+    )
+    oauth_ready = oauth_readiness["ready"]
+    token_binding = oauth_readiness.get("oauth_token_binding") or {}
 
     ocr = st.session_state.get("oauth_callback_result")
     if ocr and ocr.get("handled"):
@@ -151,6 +154,11 @@ def render_configuracoes() -> None:
     st.write(f"- CONTA_AZUL_API_BASE_URL: {_status(settings.CONTA_AZUL_API_BASE_URL)}")
     st.write(f"- CONTA_AZUL_SCOPE: {scope_efetivo}")
 
+    st.info(
+        "Alterou secrets no Streamlit Cloud? Reinicie o app (Manage app → Reboot app) "
+        "antes de reconectar — o processo em execução pode ainda estar com credenciais antigas."
+    )
+
     st.divider()
     st.subheader("Conexão Conta Azul")
 
@@ -208,6 +216,18 @@ def render_configuracoes() -> None:
             st.success("Requisitos obrigatórios para OAuth atendidos.")
 
         st.markdown("**Persistência local (tokens)**")
+        st.write(f"- **Client ID atual (mascarado):** `{mask_client_id(settings.CONTA_AZUL_CLIENT_ID)}`")
+        st.write(
+            f"- **Client ID da conexão salva (mascarado):** "
+            f"`{conn.get('client_id_masked') or 'não informado'}`"
+        )
+        st.write(
+            f"- **Fingerprint bate com configuração atual:** "
+            f"{'sim' if token_binding.get('fingerprints_match') else 'não'}"
+        )
+        emp = conn.get("connected_account_name") or "—"
+        empid = conn.get("connected_account_id") or "—"
+        st.write(f"- **Empresa conectada (API):** {emp} (id: `{empid}`)")
         st.write(f"- **Token DB (absoluto):** `{token_db_abs}`")
         st.write(f"- **Arquivo do token DB existe:** {'sim' if os.path.isfile(token_db_abs) else 'não'}")
         st.write(f"- **OAuth state DB (absoluto):** `{oauth_state_db_abs}`")
@@ -216,6 +236,11 @@ def render_configuracoes() -> None:
         st.write(
             f"- **Última atualização (tokens):** {conn['updated_at'] or 'não informado'}"
         )
+        if token_binding.get("legacy_no_fingerprint") or token_binding.get("client_mismatch"):
+            st.error(
+                "A conexão salva pertence a outro Client ID ou é OAuth antigo sem vínculo. "
+                "Limpe a conexão local e conecte novamente."
+            )
 
     if not oauth_ready:
         st.info(
@@ -227,6 +252,13 @@ def render_configuracoes() -> None:
         st.warning(
             "URL de redirecionamento inválida: parece ser um placeholder. "
             "Use a URL real gerada pelo ngrok."
+        )
+
+    if conn["connected"] and not token_binding.get("binding_ok", True):
+        st.error(
+            "A conexão salva pertence a outro Client ID ou é OAuth antigo sem vínculo "
+            "ao aplicativo atual. Use **Reconectar Conta Azul / Trocar cliente** ou "
+            "**Limpar conexão local**, depois autorize novamente."
         )
 
     status_txt = "conectado" if conn["connected"] else "desconectado"
@@ -285,6 +317,22 @@ def render_configuracoes() -> None:
                 )
                 st.session_state["oauth_auth_url"] = url
                 st.rerun()
+
+    if st.button("Reconectar Conta Azul / Trocar cliente"):
+        tp_rc = str(Path(get_token_db_path()).resolve())
+        sp_rc = str(Path(get_oauth_state_db_path()).resolve())
+        clear_tokens(tp_rc)
+        clear_state(sp_rc)
+        for _k in (
+            "oauth_auth_url",
+            "oauth_callback_result",
+            "oauth_last_processed_code_fp",
+        ):
+            st.session_state.pop(_k, None)
+        st.success(
+            "Conexão antiga removida. Clique em **Conectar Conta Azul** para autorizar o novo cliente."
+        )
+        st.rerun()
 
     test_client = st.button("Testar cliente autenticado", disabled=not oauth_ready)
     if test_client:

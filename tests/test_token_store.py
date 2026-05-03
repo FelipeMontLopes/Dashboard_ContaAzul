@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 import app_paths
+from services.oauth_identity_service import fingerprint_client_id
 from token_store import (
     clear_tokens,
     get_connection_status,
@@ -88,7 +89,18 @@ def test_is_token_expired_false_para_valido():
 
 def test_get_connection_status_nao_retorna_secrets(tmp_path):
     db = tmp_path / "sec.db"
-    save_tokens("acc-x", refresh_token="ref-y", expires_in=7200, scope="read write", db_path=str(db))
+    fp = fingerprint_client_id("meu-client-id") or "x"
+    save_tokens(
+        "acc-x",
+        refresh_token="ref-y",
+        expires_in=7200,
+        scope="read write",
+        client_id_fingerprint=fp,
+        client_id_masked="abc...xyz",
+        connected_account_name="Empresa",
+        connected_account_id="id-1",
+        db_path=str(db),
+    )
     status = get_connection_status(str(db))
     assert "access_token" not in status
     assert "refresh_token" not in status
@@ -96,6 +108,64 @@ def test_get_connection_status_nao_retorna_secrets(tmp_path):
     assert status["has_refresh_token"] is True
     assert status["scope"] == "read write"
     assert status["expires_at"] is not None
+    assert status["client_id_masked"] == "abc...xyz"
+    assert status["connected_account_name"] == "Empresa"
+    assert status["connected_account_id"] == "id-1"
+    assert len(status["client_id_fingerprint_short"]) >= 8
+
+
+def test_save_load_preserva_client_id_fingerprint(tmp_path):
+    db = tmp_path / "fp.db"
+    fp = fingerprint_client_id("app-client") or ""
+    save_tokens(
+        "tok",
+        refresh_token="r",
+        expires_in=3600,
+        client_id_fingerprint=fp,
+        client_id_masked="masked-x",
+        db_path=str(db),
+    )
+    data = load_tokens(str(db))
+    assert data is not None
+    assert data["client_id_fingerprint"] == fp
+    assert data["client_id_masked"] == "masked-x"
+
+
+def test_migracao_adiciona_colunas_em_banco_antigo(tmp_path):
+    import sqlite3
+
+    db = tmp_path / "legacy.db"
+    with sqlite3.connect(str(db)) as conn:
+        conn.execute(
+            """
+            CREATE TABLE oauth_tokens (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                access_token TEXT,
+                refresh_token TEXT,
+                token_type TEXT,
+                expires_at TEXT,
+                scope TEXT,
+                created_at TEXT,
+                updated_at TEXT
+            )
+            """
+        )
+        conn.execute(
+            """
+            INSERT INTO oauth_tokens (
+                id, access_token, refresh_token, token_type,
+                expires_at, scope, created_at, updated_at
+            )
+            VALUES (1, 'at', 'rt', 'Bearer', NULL, NULL, 'c', 'u')
+            """
+        )
+        conn.commit()
+
+    init_token_db(str(db))
+    data = load_tokens(str(db))
+    assert data is not None
+    assert data["access_token"] == "at"
+    assert data.get("client_id_fingerprint") is None
 
 
 def test_is_token_expired_none_retorna_true():

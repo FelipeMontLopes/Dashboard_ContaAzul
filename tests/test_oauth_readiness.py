@@ -2,7 +2,8 @@
 
 from types import SimpleNamespace
 
-from oauth_readiness import get_oauth_readiness
+import oauth_readiness as oauth_readiness_mod
+from oauth_readiness import get_oauth_readiness, get_oauth_token_binding_status
 from redirect_uri_service import validate_redirect_uri_format
 
 
@@ -32,6 +33,40 @@ def test_tudo_configurado_ready_true():
     assert out["ready"] is True
     assert out["missing"] == []
     assert "localhost pode não ser aceito" in out["warnings"]
+    assert "oauth_token_binding" in out
+
+
+def test_binding_sem_tokens_ok(monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        oauth_readiness_mod,
+        "get_token_db_path",
+        lambda: tmp_path / "nao_existe.db",
+    )
+    settings = SimpleNamespace(CONTA_AZUL_CLIENT_ID="abc1234567890")
+    b = get_oauth_token_binding_status(settings)
+    assert b["binding_ok"] is True
+    assert b["has_stored_tokens"] is False
+
+
+def test_binding_mismatch(monkeypatch, tmp_path):
+    from token_store import save_tokens
+
+    db = tmp_path / "tok.db"
+    fp_velho = "a" * 64
+    save_tokens(
+        "access",
+        refresh_token="r",
+        expires_in=3600,
+        client_id_fingerprint=fp_velho,
+        db_path=str(db),
+    )
+    monkeypatch.setattr(oauth_readiness_mod, "get_token_db_path", lambda: db)
+
+    settings = SimpleNamespace(CONTA_AZUL_CLIENT_ID="outro-client-completamente-diferente-xyz")
+    b = get_oauth_token_binding_status(settings)
+    assert b["has_stored_tokens"] is True
+    assert b["binding_ok"] is False
+    assert b["client_mismatch"] is True
 
 
 def test_sem_client_id():

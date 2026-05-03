@@ -2,15 +2,36 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from app_paths import get_token_db_path
 from conta_azul_client import ContaAzulClient
 from config import get_settings
 from oauth_service import refresh_access_token
+from services.oauth_identity_service import fingerprint_client_id
 from token_store import is_token_expired, load_tokens, save_tokens
+
+LEGACY_TOKEN_MSG = (
+    "Conexão OAuth antiga sem identificação do aplicativo. Reconecte a Conta Azul."
+)
+CLIENT_ID_MISMATCH_MSG = (
+    "A conexão OAuth salva pertence a outro Client ID. Limpe a conexão local e conecte novamente."
+)
 
 
 class AuthClientError(Exception):
     """Erros amigáveis da criação de cliente autenticado (sem segredos)."""
+
+
+def _validate_token_client_binding(token_data: dict[str, Any], client_id: str) -> None:
+    fp_saved = token_data.get("client_id_fingerprint")
+    fp_now = fingerprint_client_id(client_id.strip())
+    if fp_now is None:
+        return
+    if not fp_saved:
+        raise AuthClientError(LEGACY_TOKEN_MSG)
+    if fp_saved != fp_now:
+        raise AuthClientError(CLIENT_ID_MISMATCH_MSG)
 
 
 def get_authenticated_client(db_path: str | None = None) -> ContaAzulClient:
@@ -29,6 +50,8 @@ def get_authenticated_client(db_path: str | None = None) -> ContaAzulClient:
     token_data = load_tokens(path)
     if not token_data or not token_data.get("access_token"):
         raise AuthClientError("Nenhuma conexão OAuth encontrada. Conecte a Conta Azul primeiro.")
+
+    _validate_token_client_binding(token_data, client_id)
 
     if not is_token_expired(token_data):
         return ContaAzulClient(base_url=api_base_url, access_token=token_data["access_token"])
@@ -60,6 +83,10 @@ def get_authenticated_client(db_path: str | None = None) -> ContaAzulClient:
         token_type=refreshed.get("token_type") or token_data.get("token_type") or "Bearer",
         expires_in=refreshed.get("expires_in"),
         scope=refreshed.get("scope") or token_data.get("scope"),
+        client_id_fingerprint=token_data.get("client_id_fingerprint"),
+        client_id_masked=token_data.get("client_id_masked"),
+        connected_account_name=token_data.get("connected_account_name"),
+        connected_account_id=token_data.get("connected_account_id"),
         db_path=path,
     )
     return ContaAzulClient(base_url=api_base_url, access_token=new_access)

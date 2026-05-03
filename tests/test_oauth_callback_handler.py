@@ -9,6 +9,12 @@ import pytest
 
 import oauth_callback_handler as och
 from oauth_service import OAuthError
+from services.oauth_identity_service import fingerprint_client_id, mask_client_id
+
+
+@pytest.fixture(autouse=True)
+def _no_connected_account_probe(monkeypatch):
+    monkeypatch.setattr(och, "_try_fetch_connected_account_metadata", lambda **k: None)
 
 
 @pytest.fixture
@@ -31,7 +37,7 @@ def full_settings():
         CONTA_AZUL_REDIRECT_URI="https://app.example/cb",
         CONTA_AZUL_API_BASE_URL="https://api.example",
         CONTA_AZUL_SCOPE="openid profile",
-        CONTA_AZUL_DIAGNOSTIC_PATH="/v1/x",
+        CONTA_AZUL_DIAGNOSTIC_PATH="/v1/pessoas/conta-conectada",
     )
 
 
@@ -136,6 +142,8 @@ def test_code_state_valido_chama_exchange_e_salva_tokens(
     assert exchange_kw.get("redirect_uri") == "https://r/"
     assert "save_kw" in saved
     assert saved["save_kw"]["access_token"] == "at"
+    assert saved["save_kw"]["client_id_fingerprint"] == fingerprint_client_id("client-id")
+    assert saved["save_kw"]["client_id_masked"] == mask_client_id("client-id")
     assert out["success"] is True
     assert out["status"] == "connected"
     assert out["token_saved"] is True

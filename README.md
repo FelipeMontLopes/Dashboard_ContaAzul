@@ -168,6 +168,20 @@ As URLs de auth/token/API/scope/diagnóstico podem ser omitidas nos secrets se v
 - A pasta **`.local_data/`** não deve ir para o repositório; no Streamlit Cloud o filesystem é **efêmero**: **SQLite local não é persistência confiável** — reinícios ou novos containers podem apagar tokens gravados localmente. Para produção séria, planeje migrar tokens/sessão para um banco gerenciado (ex.: Postgres/Supabase).
 - Para testes locais após mudanças: `pip install -r requirements.txt` e `streamlit run app.py`.
 
+## Troca de cliente / troca de credenciais Conta Azul
+
+Alterar apenas `CONTA_AZUL_CLIENT_ID` e `CONTA_AZUL_CLIENT_SECRET` **não** troca automaticamente a sessão OAuth já gravada no SQLite local. Os **access/refresh tokens** continuam associados ao **Client ID** que foi usado na autorização original.
+
+**Regra operacional**
+
+1. Troque `CLIENT_ID` / `CLIENT_SECRET` (ou secrets no Streamlit Cloud).
+2. **Reinicie o app** no Streamlit Cloud (**Manage app → Reboot app**) para o processo carregar os novos valores — mudar secrets no painel nem sempre atualiza o processo já em execução.
+3. Em **Configurações**, use **Reconectar Conta Azul / Trocar cliente** ou **Limpar conexão local** para apagar tokens e estado OAuth locais.
+4. Clique em **Conectar Conta Azul** e autorize de novo com o novo aplicativo/cliente.
+5. Valide com **Testar chamada real de diagnóstico** (`/v1/pessoas/conta-conectada` ou o path configurado).
+
+A aplicação passa a gravar um **fingerprint (SHA-256)** do Client ID junto com os tokens e **bloqueia** o uso de tokens salvos quando o Client ID atual não coincide — é obrigatório limpar a conexão local e refazer o OAuth. **Nunca** reutilize tokens obtidos com outro cliente/aplicativo.
+
 ## Fase 5 — Explorador da API e snapshots
 
 Esta fase adiciona o **Explorador da API** (menu lateral) para chamar endpoints GET reais com o cliente autenticado, registrar **sucesso ou erro** e gravar **snapshots sanitizados** das respostas em SQLite.

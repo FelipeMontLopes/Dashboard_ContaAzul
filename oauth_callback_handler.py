@@ -11,6 +11,7 @@ import streamlit as st
 
 from app_paths import get_oauth_state_db_path, get_token_db_path
 from config import get_settings
+from conta_azul_client import ContaAzulClient
 from oauth_readiness import get_oauth_readiness
 from oauth_service import OAuthError, exchange_code_for_tokens
 from oauth_state_store import clear_state, init_oauth_state_db, load_state_context, validate_state
@@ -19,7 +20,8 @@ from redirect_uri_service import (
     sanitize_redirect_uri,
     validate_redirect_uri_format,
 )
-from token_store import init_token_db, load_tokens, save_tokens
+from services.oauth_identity_service import fingerprint_client_id, mask_client_id
+from token_store import init_token_db, load_tokens, save_tokens, update_connected_account_metadata
 
 
 def _sanitize_error_description(raw: str | None, max_len: int = 400) -> str:
@@ -60,6 +62,49 @@ def _token_paths() -> tuple[str, str]:
     token_db = str(Path(get_token_db_path()).resolve())
     state_db = str(Path(get_oauth_state_db_path()).resolve())
     return token_db, state_db
+
+
+def _extract_connected_account_fields(payload: Any) -> tuple[str | None, str | None]:
+    if not isinstance(payload, dict):
+        return None, None
+    nome = (
+        payload.get("nome")
+        or payload.get("razaoSocial")
+        or payload.get("razao_social")
+        or payload.get("name")
+        or payload.get("fantasia")
+    )
+    acc_id = payload.get("id") or payload.get("uuid") or payload.get("cnpj") or payload.get("cpf")
+    if nome is not None:
+        nome = str(nome).strip() or None
+    if acc_id is not None:
+        acc_id = str(acc_id).strip() or None
+    return nome, acc_id
+
+
+def _try_fetch_connected_account_metadata(
+    *,
+    access_token: str,
+    api_base_url: str,
+    diagnostic_path: str,
+    db_path: str,
+) -> None:
+    """Best-effort: preenche nome/ID da conta após OAuth. Falhas são ignoradas."""
+    try:
+        clean_base = (api_base_url or "").strip()
+        clean_path = (diagnostic_path or "").strip() or "/v1/pessoas/conta-conectada"
+        if not clean_base or not access_token.strip():
+            return
+        client = ContaAzulClient(base_url=clean_base, access_token=access_token)
+        raw = client.get(clean_path)
+        name, acc_id = _extract_connected_account_fields(raw)
+        update_connected_account_metadata(
+            connected_account_name=name,
+            connected_account_id=acc_id,
+            db_path=db_path,
+        )
+    except Exception:
+        return
 
 
 def _meta(
@@ -131,7 +176,9 @@ def handle_oauth_callback(query_params: Mapping[str, Any] | None = None) -> dict
     settings = get_settings()
     effective_redirect = get_effective_redirect_uri()
     vr = validate_redirect_uri_format(effective_redirect)
-    oauth_ready = get_oauth_readiness(settings, effective_redirect, vr)["ready"]
+    oauth_ready = get_oauth_readiness(
+        settings, effective_redirect, vr, db_path=token_db_path_abs
+    )["ready"]
 
     if not oauth_ready:
         return {
@@ -216,12 +263,15 @@ def handle_oauth_callback(query_params: Mapping[str, Any] | None = None) -> dict
         has_at = bool(resp.get("access_token"))
         has_rt = bool(resp.get("refresh_token"))
 
+        cid_strip = settings.CONTA_AZUL_CLIENT_ID.strip()
         save_tokens(
             access_token=resp["access_token"],
             refresh_token=resp.get("refresh_token"),
             token_type=resp.get("token_type", "Bearer"),
             expires_in=resp.get("expires_in"),
             scope=resp.get("scope"),
+            client_id_fingerprint=fingerprint_client_id(cid_strip),
+            client_id_masked=mask_client_id(cid_strip),
             db_path=token_db_path_abs,
         )
         verified = load_tokens(token_db_path_abs)
@@ -246,6 +296,13 @@ def handle_oauth_callback(query_params: Mapping[str, Any] | None = None) -> dict
             st.session_state.pop("oauth_auth_url", None)
         except Exception:
             pass
+
+        _try_fetch_connected_account_metadata(
+            access_token=resp["access_token"],
+            api_base_url=settings.CONTA_AZUL_API_BASE_URL.strip(),
+            diagnostic_path=settings.CONTA_AZUL_DIAGNOSTIC_PATH.strip(),
+            db_path=token_db_path_abs,
+        )
 
         return {
             "handled": True,

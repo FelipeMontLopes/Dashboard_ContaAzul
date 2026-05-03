@@ -1,4 +1,10 @@
-"""Configuração: .env local + variáveis de ambiente + Streamlit secrets (Cloud)."""
+"""Configuração: .env local + variáveis de ambiente + Streamlit secrets (Cloud).
+
+``get_settings()`` não usa ``functools.lru_cache``: cada chamada relê variáveis de ambiente
+e ``st.secrets`` quando aplicável. Em **Streamlit Community Cloud**, alterar secrets no
+painel pode não atualizar o processo já em execução — use **Manage app → Reboot app**
+para carregar novos valores antes de reconectar OAuth.
+"""
 
 from __future__ import annotations
 
