@@ -7,6 +7,8 @@ def selecionar_pagina() -> str:
         "Navegação",
         [
             "Resumo Executivo",
+            "Relatório Gerencial MVP",
+            "Cadastros Gerenciais",
             "Contas a Receber",
             "Contas a Pagar",
             "Fluxo de Caixa",

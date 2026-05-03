@@ -32,3 +32,8 @@ def get_app_settings_db_path() -> Path:
 def get_snapshot_db_path() -> Path:
     """Banco SQLite para snapshots brutos de chamadas à API (explorador / diagnóstico)."""
     return get_data_dir() / "conta_azul_api_snapshots.db"
+
+
+def get_gerencial_db_path() -> Path:
+    """Banco SQLite para cadastros gerenciais e dados do relatório MVP."""
+    return get_data_dir() / "conta_azul_gerencial.db"

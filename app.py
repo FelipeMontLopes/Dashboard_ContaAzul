@@ -9,6 +9,8 @@ from ui.fluxo_caixa import render_fluxo_caixa
 from ui.configuracoes import render_configuracoes
 from ui.api_explorer import render_api_explorer
 from ui.data_contracts import render_data_contracts
+from ui.cadastros_gerenciais import render_cadastros_gerenciais
+from ui.relatorio_gerencial_mvp import render_relatorio_gerencial_mvp
 
 
 def main() -> None:
@@ -41,6 +43,10 @@ def main() -> None:
         render_api_explorer()
     elif pagina == "Contratos de Dados":
         render_data_contracts()
+    elif pagina == "Relatório Gerencial MVP":
+        render_relatorio_gerencial_mvp()
+    elif pagina == "Cadastros Gerenciais":
+        render_cadastros_gerenciais()
     else:
         render_configuracoes()
 

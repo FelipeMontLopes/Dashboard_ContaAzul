@@ -26,3 +26,4 @@ def test_db_paths_under_data_dir(monkeypatch, tmp_path):
     assert app_paths.get_oauth_state_db_path() == proj / ".local_data" / "conta_azul_oauth_state.db"
     assert app_paths.get_app_settings_db_path() == proj / ".local_data" / "conta_azul_app_settings.db"
     assert app_paths.get_snapshot_db_path() == proj / ".local_data" / "conta_azul_api_snapshots.db"
+    assert app_paths.get_gerencial_db_path() == proj / ".local_data" / "conta_azul_gerencial.db"

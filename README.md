@@ -200,6 +200,18 @@ Esta fase adiciona o **Explorador da API** (menu lateral) para chamar endpoints 
 - Os snapshots ficam em **`.local_data/`** (arquivo `conta_azul_api_snapshots.db`). Essa pasta **não** vai para o Git.
 - No **Streamlit Community Cloud**, o filesystem é efêmero: **SQLite local pode não persistir** entre reinícios ou novos containers — use o explorador como diagnóstico; para produção estável, planeje migrar snapshots e tokens para **Postgres/Supabase** (ou outro backend gerenciado).
 
+## Fase 6B.1 — Relatório Gerencial MVP
+
+Esta fase entrega a **primeira versão visual e funcional** de um relatório financeiro gerencial (inspirado no PDF de referência), **sem substituir** o dashboard clássico (Resumo, contas, fluxo).
+
+- **Menu:** *Relatório Gerencial MVP* e *Cadastros Gerenciais*.
+- **Cadastros manuais** em SQLite (`.local_data/conta_azul_gerencial.db` via `app_paths.get_gerencial_db_path()`): sócios, obras/projetos, custos fixos, investimentos, premissas, indicadores, justificativas, mapeamentos futuros Conta Azul.
+- **Dados da Conta Azul:** quando existirem snapshots sanitizados no explorador, o relatório mostra **metadados** (há dados brutos), mas **não inventa KPIs** extraídos automaticamente até haver normalização financeira real (próximos passos).
+- Valores **calculados** (margem, quotas de sócios, break-even a partir de premissas) aparecem como fonte **Calculado**.
+- Onde não há dado nem cadastro: **Pendente** / **Não configurado** — em conformidade com a regra de não simular números reais.
+
+Próximo passo natural: normalização mais profunda dos eventos financeiros da API para alimentar o mesmo layout com totais **Conta Azul** validados.
+
 ## Fase 6A — Contratos dos dados reais
 
 Esta fase **não substitui os mocks** das telas do dashboard e **não define KPIs finais**.
