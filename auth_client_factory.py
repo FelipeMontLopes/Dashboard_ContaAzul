@@ -85,8 +85,6 @@ def get_authenticated_client(db_path: str | None = None) -> ContaAzulClient:
         scope=refreshed.get("scope") or token_data.get("scope"),
         client_id_fingerprint=token_data.get("client_id_fingerprint"),
         client_id_masked=token_data.get("client_id_masked"),
-        connected_account_name=token_data.get("connected_account_name"),
-        connected_account_id=token_data.get("connected_account_id"),
         db_path=path,
     )
     return ContaAzulClient(base_url=api_base_url, access_token=new_access)

@@ -144,6 +144,9 @@ def test_code_state_valido_chama_exchange_e_salva_tokens(
     assert saved["save_kw"]["access_token"] == "at"
     assert saved["save_kw"]["client_id_fingerprint"] == fingerprint_client_id("client-id")
     assert saved["save_kw"]["client_id_masked"] == mask_client_id("client-id")
+    assert saved["save_kw"]["connected_account_name"] is None
+    assert saved["save_kw"]["connected_account_id"] is None
+    assert saved["save_kw"]["connected_account_document"] is None
     assert out["success"] is True
     assert out["status"] == "connected"
     assert out["token_saved"] is True

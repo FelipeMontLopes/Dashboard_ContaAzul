@@ -182,6 +182,14 @@ Alterar apenas `CONTA_AZUL_CLIENT_ID` e `CONTA_AZUL_CLIENT_SECRET` **não** troc
 
 A aplicação passa a gravar um **fingerprint (SHA-256)** do Client ID junto com os tokens e **bloqueia** o uso de tokens salvos quando o Client ID atual não coincide — é obrigatório limpar a conexão local e refazer o OAuth. **Nunca** reutilize tokens obtidos com outro cliente/aplicativo.
 
+## Client ID vs empresa conectada
+
+- **Client ID** identifica a **aplicação OAuth** registrada no Portal do Desenvolvedor Conta Azul — não identifica qual empresa CNPJ será usada nos dados.
+- A **empresa conectada** (nome/id/documento retornados por `/v1/pessoas/conta-conectada`) reflete a **conta/usuário que você autorizou** no fluxo de login OAuth da Conta Azul.
+- **Trocar Client ID** garante apenas qual **app** está pedindo acesso; **não** garante trocar a empresa: você pode continuar com o mesmo usuário logado no navegador ou autorizar outra conta sem querer.
+- Para **mudar a empresa**, limpe a conexão local (**Reconectar Conta Azul / Trocar cliente**), depois **Conectar Conta Azul** e autorize com o usuário da empresa correta. Se o navegador reutilizar sessão antiga, use **aba anônima/privada** ao abrir o link de autorização.
+- Na página **Configurações**, a seção **Verificação da empresa conectada** separa **metadata salva no SQLite** (última captura gravada) de uma **consulta ao vivo** ao endpoint — ajuda a detectar divergência sem confundir com erro técnico de OAuth.
+
 ## Fase 5 — Explorador da API e snapshots
 
 Esta fase adiciona o **Explorador da API** (menu lateral) para chamar endpoints GET reais com o cliente autenticado, registrar **sucesso ou erro** e gravar **snapshots sanitizados** das respostas em SQLite.

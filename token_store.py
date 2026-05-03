@@ -9,17 +9,20 @@ from typing import Any
 from app_paths import get_token_db_path
 from services.oauth_identity_service import short_fingerprint
 
-
-def _resolve_db_path(db_path: str | None) -> str:
-    return db_path if db_path is not None else str(get_token_db_path())
-
+METADATA_UNSET = object()
 
 _OAUTH_EXTRA_COLUMNS: tuple[tuple[str, str], ...] = (
     ("client_id_fingerprint", "TEXT"),
     ("client_id_masked", "TEXT"),
     ("connected_account_name", "TEXT"),
     ("connected_account_id", "TEXT"),
+    ("connected_account_document", "TEXT"),
+    ("connected_metadata_updated_at", "TEXT"),
 )
+
+
+def _resolve_db_path(db_path: str | None) -> str:
+    return db_path if db_path is not None else str(get_token_db_path())
 
 
 def _migrate_oauth_columns(conn: sqlite3.Connection) -> None:
@@ -67,6 +70,25 @@ def _parse_expires_at(value: str | None) -> datetime | None:
         return None
 
 
+def _resolve_connected_field(
+    prior: dict[str, Any] | None,
+    key: str,
+    arg: Any,
+) -> Any:
+    if arg is METADATA_UNSET:
+        return prior.get(key) if prior else None
+    return arg
+
+
+def _mask_document_display(value: str | None) -> str | None:
+    if value is None or not str(value).strip():
+        return None
+    s = str(value).strip()
+    if len(s) <= 6:
+        return "***"
+    return f"{s[:2]}·…·{s[-2:]}"
+
+
 def save_tokens(
     access_token: str,
     refresh_token: str | None = None,
@@ -76,8 +98,9 @@ def save_tokens(
     *,
     client_id_fingerprint: str | None = None,
     client_id_masked: str | None = None,
-    connected_account_name: str | None = None,
-    connected_account_id: str | None = None,
+    connected_account_name: Any = METADATA_UNSET,
+    connected_account_id: Any = METADATA_UNSET,
+    connected_account_document: Any = METADATA_UNSET,
     db_path: str | None = None,
 ) -> None:
     if not access_token or not str(access_token).strip():
@@ -104,16 +127,20 @@ def save_tokens(
     masked_use = (
         client_id_masked if client_id_masked is not None else (prior.get("client_id_masked") if prior else None)
     )
-    name_use = (
-        connected_account_name
-        if connected_account_name is not None
-        else (prior.get("connected_account_name") if prior else None)
+    name_use = _resolve_connected_field(prior, "connected_account_name", connected_account_name)
+    id_use = _resolve_connected_field(prior, "connected_account_id", connected_account_id)
+    doc_use = _resolve_connected_field(prior, "connected_account_document", connected_account_document)
+
+    meta_prior = prior.get("connected_metadata_updated_at") if prior else None
+    explicit_meta = (
+        connected_account_name is not METADATA_UNSET
+        or connected_account_id is not METADATA_UNSET
+        or connected_account_document is not METADATA_UNSET
     )
-    id_use = (
-        connected_account_id
-        if connected_account_id is not None
-        else (prior.get("connected_account_id") if prior else None)
-    )
+    if explicit_meta:
+        meta_ts_use = None if (name_use is None and id_use is None and doc_use is None) else meta_prior
+    else:
+        meta_ts_use = meta_prior
 
     with sqlite3.connect(path) as conn:
         row = conn.execute("SELECT id, created_at FROM oauth_tokens WHERE id = 1").fetchone()
@@ -124,9 +151,10 @@ def save_tokens(
                     id, access_token, refresh_token, token_type,
                     expires_at, scope, created_at, updated_at,
                     client_id_fingerprint, client_id_masked,
-                    connected_account_name, connected_account_id
+                    connected_account_name, connected_account_id,
+                    connected_account_document, connected_metadata_updated_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     1,
@@ -141,6 +169,8 @@ def save_tokens(
                     masked_use,
                     name_use,
                     id_use,
+                    doc_use,
+                    meta_ts_use,
                 ),
             )
         else:
@@ -157,7 +187,9 @@ def save_tokens(
                     client_id_fingerprint = ?,
                     client_id_masked = ?,
                     connected_account_name = ?,
-                    connected_account_id = ?
+                    connected_account_id = ?,
+                    connected_account_document = ?,
+                    connected_metadata_updated_at = ?
                 WHERE id = 1
                 """,
                 (
@@ -171,6 +203,8 @@ def save_tokens(
                     masked_use,
                     name_use,
                     id_use,
+                    doc_use,
+                    meta_ts_use,
                 ),
             )
             if created_at is None:
@@ -185,9 +219,10 @@ def update_connected_account_metadata(
     *,
     connected_account_name: str | None,
     connected_account_id: str | None,
+    connected_account_document: str | None = None,
     db_path: str | None = None,
 ) -> None:
-    """Atualiza apenas nome/ID da conta conectada (sem alterar tokens)."""
+    """Atualiza apenas metadados da empresa (sem alterar tokens). Não altera ``updated_at`` da linha."""
     path = _resolve_db_path(db_path)
     if not _db_exists(path):
         return
@@ -199,10 +234,16 @@ def update_connected_account_metadata(
             UPDATE oauth_tokens SET
                 connected_account_name = ?,
                 connected_account_id = ?,
-                updated_at = ?
+                connected_account_document = ?,
+                connected_metadata_updated_at = ?
             WHERE id = 1
             """,
-            (connected_account_name, connected_account_id, now_iso),
+            (
+                connected_account_name,
+                connected_account_id,
+                connected_account_document,
+                now_iso,
+            ),
         )
         conn.commit()
 
@@ -219,7 +260,8 @@ def load_tokens(db_path: str | None = None) -> dict[str, Any] | None:
             SELECT access_token, refresh_token, token_type, expires_at, scope,
                    created_at, updated_at,
                    client_id_fingerprint, client_id_masked,
-                   connected_account_name, connected_account_id
+                   connected_account_name, connected_account_id,
+                   connected_account_document, connected_metadata_updated_at
             FROM oauth_tokens WHERE id = 1
             """
         ).fetchone()
@@ -240,6 +282,8 @@ def load_tokens(db_path: str | None = None) -> dict[str, Any] | None:
         "client_id_masked": data.get("client_id_masked"),
         "connected_account_name": data.get("connected_account_name"),
         "connected_account_id": data.get("connected_account_id"),
+        "connected_account_document": data.get("connected_account_document"),
+        "connected_metadata_updated_at": data.get("connected_metadata_updated_at"),
     }
 
 
@@ -290,6 +334,7 @@ def get_connection_status(db_path: str | None = None) -> dict[str, Any]:
     expires_raw = data.get("expires_at") if data else None
     expired = is_token_expired(data) if data else True
     fp_full = data.get("client_id_fingerprint") if data else None
+    doc_raw = data.get("connected_account_document") if data else None
     return {
         "connected": connected,
         "has_refresh_token": has_refresh,
@@ -301,4 +346,7 @@ def get_connection_status(db_path: str | None = None) -> dict[str, Any]:
         "client_id_fingerprint_short": short_fingerprint(fp_full),
         "connected_account_name": data.get("connected_account_name") if data else None,
         "connected_account_id": data.get("connected_account_id") if data else None,
+        "connected_account_document_masked": _mask_document_display(str(doc_raw) if doc_raw else None),
+        "connected_metadata_updated_at": data.get("connected_metadata_updated_at") if data else None,
+        "metadata_persisted_in": "token_store",
     }

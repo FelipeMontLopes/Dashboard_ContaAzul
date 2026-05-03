@@ -20,8 +20,13 @@ from redirect_uri_service import (
     save_redirect_uri_override,
     validate_redirect_uri_format,
 )
+from services.connected_company_service import (
+    fetch_conta_conectada_live,
+    metadata_matches_live,
+    refresh_connected_company_metadata,
+)
 from services.diagnostico_api_service import call_diagnostic_endpoint
-from token_store import clear_tokens, get_connection_status, init_token_db
+from token_store import clear_tokens, get_connection_status, init_token_db, load_tokens
 
 SCOPE_PADRAO = "openid profile aws.cognito.signin.user.admin"
 
@@ -56,6 +61,8 @@ def render_configuracoes() -> None:
     oauth_connect_err = st.session_state.pop("oauth_connect_error", None)
     if oauth_connect_err:
         st.error(oauth_connect_err)
+    if st.session_state.pop("config_meta_updated_flash", False):
+        st.success("Metadata da empresa conectada atualizada com dados da API ao vivo.")
 
     settings = get_settings()
 
@@ -162,6 +169,16 @@ def render_configuracoes() -> None:
     st.divider()
     st.subheader("Conexão Conta Azul")
 
+    st.info(
+        "**Client ID** identifica a **aplicação OAuth** cadastrada no portal, não a empresa. "
+        "A **empresa conectada** depende do **usuário/conta** que você autoriza no login da Conta Azul."
+    )
+    st.warning(
+        "Se a empresa exibida estiver incorreta, use **Reconectar Conta Azul / Trocar cliente** e "
+        "autorize com o usuário da empresa certa. Se o navegador reaproveitar sessão antiga, "
+        "tente uma **aba anônima/privada** ao abrir o link de autorização."
+    )
+
     _auth_u = settings.CONTA_AZUL_AUTH_URL.strip()
     _tok_u = settings.CONTA_AZUL_TOKEN_URL.strip()
     _api_u = settings.CONTA_AZUL_API_BASE_URL.strip()
@@ -225,9 +242,13 @@ def render_configuracoes() -> None:
             f"- **Fingerprint bate com configuração atual:** "
             f"{'sim' if token_binding.get('fingerprints_match') else 'não'}"
         )
-        emp = conn.get("connected_account_name") or "—"
-        empid = conn.get("connected_account_id") or "—"
-        st.write(f"- **Empresa conectada (API):** {emp} (id: `{empid}`)")
+        st.write(
+            "- **Empresa (metadata local no `token_store`, última captura salva):** "
+            f"{conn.get('connected_account_name') or '—'} · id `{conn.get('connected_account_id') or '—'}` · "
+            f"documento `{conn.get('connected_account_document_masked') or '—'}` · "
+            f"metadata atualizada em `{conn.get('connected_metadata_updated_at') or 'não informado'}` "
+            "(não é chamada ao vivo; veja **Verificação da empresa conectada** abaixo)."
+        )
         st.write(f"- **Token DB (absoluto):** `{token_db_abs}`")
         st.write(f"- **Arquivo do token DB existe:** {'sim' if os.path.isfile(token_db_abs) else 'não'}")
         st.write(f"- **OAuth state DB (absoluto):** `{oauth_state_db_abs}`")
@@ -260,6 +281,87 @@ def render_configuracoes() -> None:
             "ao aplicativo atual. Use **Reconectar Conta Azul / Trocar cliente** ou "
             "**Limpar conexão local**, depois autorize novamente."
         )
+
+    st.subheader("Verificação da empresa conectada")
+    st.caption(
+        "Esta seção separa **metadata salva no SQLite** (`token_store`) de uma **consulta ao vivo** "
+        "ao endpoint configurado. **Não usa snapshots** do Explorador da API."
+    )
+
+    st.markdown("**A) Empresa salva no token_store**")
+    st.write(f"- **Nome:** {conn.get('connected_account_name') or '—'}")
+    st.write(f"- **ID:** `{conn.get('connected_account_id') or '—'}`")
+    st.write(f"- **Documento (mascarado):** `{conn.get('connected_account_document_masked') or '—'}`")
+    st.write(
+        f"- **Momento da metadata (`connected_metadata_updated_at`):** "
+        f"{conn.get('connected_metadata_updated_at') or 'não informado'}"
+    )
+    st.write(
+        f"- **Última alteração da linha OAuth (`updated_at`, pode incluir refresh de token):** "
+        f"{conn.get('updated_at') or 'não informado'}"
+    )
+
+    can_probe = oauth_ready and conn.get("connected") and token_binding.get("binding_ok", True)
+    col_pv, col_up = st.columns(2)
+    with col_pv:
+        if st.button(
+            "Verificar empresa conectada agora",
+            disabled=not can_probe,
+            help="Chama /conta-conectada ao vivo; não altera o banco.",
+        ):
+            st.session_state["empresa_live_last_probe"] = fetch_conta_conectada_live(
+                db_path=token_db_abs
+            )
+    with col_up:
+        if st.button(
+            "Atualizar metadata da empresa conectada",
+            disabled=not can_probe,
+            help="Consulta a API e grava apenas nome/id/documento no token_store.",
+        ):
+            meta_up = refresh_connected_company_metadata(db_path=token_db_abs)
+            if meta_up.get("success"):
+                st.session_state["empresa_live_last_probe"] = None
+                st.session_state["config_meta_updated_flash"] = True
+                st.rerun()
+            else:
+                st.error(meta_up.get("error") or "Não foi possível atualizar metadata.")
+
+    probe = st.session_state.get("empresa_live_last_probe")
+    if probe is not None:
+        st.markdown("**B) Empresa retornada agora pela API (ao vivo)**")
+        if probe.get("success"):
+            st.success(f"Verificação em `{probe.get('checked_at')}` · path `{probe.get('path')}`")
+            st.write(f"- **Nome:** {probe.get('name') or '—'}")
+            st.write(f"- **ID:** `{probe.get('id') or '—'}`")
+            st.write(f"- **Documento:** `{probe.get('document') or '—'}`")
+            if isinstance(probe.get("data"), dict):
+                with st.expander("JSON sanitizado (resumo)", expanded=False):
+                    st.json(probe.get("data"))
+        else:
+            st.error(probe.get("error") or "Falha na verificação ao vivo.")
+            if probe.get("status_code"):
+                st.caption(f"HTTP {probe.get('status_code')}")
+
+    lt_cmp = load_tokens(token_db_abs)
+    saved_doc_plain = lt_cmp.get("connected_account_document") if lt_cmp else None
+
+    if probe is not None and probe.get("success"):
+        st.markdown("**C) Comparação (alerta operacional — não indica falha técnica de OAuth)**")
+        match = metadata_matches_live(
+            saved_name=conn.get("connected_account_name"),
+            saved_id=conn.get("connected_account_id"),
+            saved_document=saved_doc_plain,
+            live_name=probe.get("name"),
+            live_id=probe.get("id"),
+            live_document=probe.get("document"),
+        )
+        if match:
+            st.success("Metadata salva e resposta ao vivo coincidem.")
+        else:
+            st.warning(
+                "Metadata salva difere da empresa retornada pela API. "
+                "Use **Atualizar metadata** ou **Reconectar Conta Azul** se o usuário autorizado não for o desejado."
+            )
 
     status_txt = "conectado" if conn["connected"] else "desconectado"
     refresh_txt = "sim" if conn["has_refresh_token"] else "não"

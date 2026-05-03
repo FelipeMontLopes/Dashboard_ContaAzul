@@ -15,6 +15,7 @@ from token_store import (
     is_token_expired,
     load_tokens,
     save_tokens,
+    update_connected_account_metadata,
 )
 
 
@@ -129,6 +130,44 @@ def test_save_load_preserva_client_id_fingerprint(tmp_path):
     assert data is not None
     assert data["client_id_fingerprint"] == fp
     assert data["client_id_masked"] == "masked-x"
+
+
+def test_save_tokens_explicit_none_limpa_metadata_sem_preservar_empresa(tmp_path):
+    db = str(tmp_path / "meta.db")
+    save_tokens("a", refresh_token="r", expires_in=3600, db_path=db)
+    update_connected_account_metadata(
+        connected_account_name="FM TRADING",
+        connected_account_id="x-1",
+        connected_account_document="12345678000199",
+        db_path=db,
+    )
+    save_tokens(
+        "b",
+        refresh_token="r",
+        expires_in=3600,
+        connected_account_name=None,
+        connected_account_id=None,
+        connected_account_document=None,
+        db_path=db,
+    )
+    st = get_connection_status(db)
+    assert st["connected_account_name"] is None
+    assert st["connected_account_id"] is None
+    assert st["connected_metadata_updated_at"] is None
+
+
+def test_update_metadata_nao_altera_access_token(tmp_path):
+    db = str(tmp_path / "tokonly.db")
+    save_tokens("acesso-fixo", refresh_token="r", expires_in=3600, db_path=db)
+    update_connected_account_metadata(
+        connected_account_name="Empresa",
+        connected_account_id="1",
+        connected_account_document="00",
+        db_path=db,
+    )
+    t = load_tokens(db)
+    assert t is not None
+    assert t["access_token"] == "acesso-fixo"
 
 
 def test_migracao_adiciona_colunas_em_banco_antigo(tmp_path):

@@ -20,6 +20,7 @@ from redirect_uri_service import (
     sanitize_redirect_uri,
     validate_redirect_uri_format,
 )
+from services.connected_company_service import extract_company_fields
 from services.oauth_identity_service import fingerprint_client_id, mask_client_id
 from token_store import init_token_db, load_tokens, save_tokens, update_connected_account_metadata
 
@@ -64,24 +65,6 @@ def _token_paths() -> tuple[str, str]:
     return token_db, state_db
 
 
-def _extract_connected_account_fields(payload: Any) -> tuple[str | None, str | None]:
-    if not isinstance(payload, dict):
-        return None, None
-    nome = (
-        payload.get("nome")
-        or payload.get("razaoSocial")
-        or payload.get("razao_social")
-        or payload.get("name")
-        or payload.get("fantasia")
-    )
-    acc_id = payload.get("id") or payload.get("uuid") or payload.get("cnpj") or payload.get("cpf")
-    if nome is not None:
-        nome = str(nome).strip() or None
-    if acc_id is not None:
-        acc_id = str(acc_id).strip() or None
-    return nome, acc_id
-
-
 def _try_fetch_connected_account_metadata(
     *,
     access_token: str,
@@ -89,7 +72,7 @@ def _try_fetch_connected_account_metadata(
     diagnostic_path: str,
     db_path: str,
 ) -> None:
-    """Best-effort: preenche nome/ID da conta após OAuth. Falhas são ignoradas."""
+    """Preenche metadata após OAuth. Falhas são ignoradas (metadata permanece vazia)."""
     try:
         clean_base = (api_base_url or "").strip()
         clean_path = (diagnostic_path or "").strip() or "/v1/pessoas/conta-conectada"
@@ -97,10 +80,11 @@ def _try_fetch_connected_account_metadata(
             return
         client = ContaAzulClient(base_url=clean_base, access_token=access_token)
         raw = client.get(clean_path)
-        name, acc_id = _extract_connected_account_fields(raw)
+        fields = extract_company_fields(raw if isinstance(raw, dict) else {})
         update_connected_account_metadata(
-            connected_account_name=name,
-            connected_account_id=acc_id,
+            connected_account_name=fields["name"],
+            connected_account_id=fields["id"],
+            connected_account_document=fields["document"],
             db_path=db_path,
         )
     except Exception:
@@ -272,6 +256,9 @@ def handle_oauth_callback(query_params: Mapping[str, Any] | None = None) -> dict
             scope=resp.get("scope"),
             client_id_fingerprint=fingerprint_client_id(cid_strip),
             client_id_masked=mask_client_id(cid_strip),
+            connected_account_name=None,
+            connected_account_id=None,
+            connected_account_document=None,
             db_path=token_db_path_abs,
         )
         verified = load_tokens(token_db_path_abs)
